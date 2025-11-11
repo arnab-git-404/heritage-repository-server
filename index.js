@@ -84,66 +84,66 @@ mongoose
 const PORT = process.env.PORT || 5000;
 const server = createServer(app);
 
-const io = new SocketIOServer(server, {
-  cors: { origin: "*" },
-});
+// const io = new SocketIOServer(server, {
+//   cors: { origin: "*" },
+// });
 
-io.use((socket, next) => {
-  try {
-    const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace(/^Bearer\s+/, "");
-    if (!token) return next(new Error("Missing token"));
-    if (!process.env.JWT_SECRET) return next(new Error("Server misconfiguration"));
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    if (!payload || !payload.user || !payload.user.id) return next(new Error("Invalid token"));
-    socket.userId = String(payload.user.id);
-    next();
-  } catch (e) {
-    next(new Error("Invalid token"));
-  }
-});
+// io.use((socket, next) => {
+//   try {
+//     const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace(/^Bearer\s+/, "");
+//     if (!token) return next(new Error("Missing token"));
+//     if (!process.env.JWT_SECRET) return next(new Error("Server misconfiguration"));
+//     const payload = jwt.verify(token, process.env.JWT_SECRET);
+//     if (!payload || !payload.user || !payload.user.id) return next(new Error("Invalid token"));
+//     socket.userId = String(payload.user.id);
+//     next();
+//   } catch (e) {
+//     next(new Error("Invalid token"));
+//   }
+// });
 
-async function canChat(userA, userB) {
-  if (!userA || !userB) return false;
-  try {
-    const exists = await Collaboration.exists({
-      status: 'accepted',
-      $or: [
-        { requesterId: userA, recipientId: userB },
-        { requesterId: userB, recipientId: userA },
-      ],
-    });
-    return Boolean(exists);
-  } catch {
-    return false;
-  }
-}
+// async function canChat(userA, userB) {
+//   if (!userA || !userB) return false;
+//   try {
+//     const exists = await Collaboration.exists({
+//       status: 'accepted',
+//       $or: [
+//         { requesterId: userA, recipientId: userB },
+//         { requesterId: userB, recipientId: userA },
+//       ],
+//     });
+//     return Boolean(exists);
+//   } catch {
+//     return false;
+//   }
+// }
 
-function roomFor(u1, u2) {
-  return [String(u1), String(u2)].sort().join('::');
-}
+// function roomFor(u1, u2) {
+//   return [String(u1), String(u2)].sort().join('::');
+// }
 
-io.on('connection', (socket) => {
-  socket.on('join', async ({ otherUserId }) => {
-    if (!otherUserId) return;
-    const allowed = await canChat(socket.userId, otherUserId);
-    if (!allowed) {
-      socket.emit('error', { message: 'Chat not allowed' });
-      return;
-    }
-    const room = roomFor(socket.userId, otherUserId);
-    socket.join(room);
-    socket.emit('joined', { roomId: room });
-  });
+// io.on('connection', (socket) => {
+//   socket.on('join', async ({ otherUserId }) => {
+//     if (!otherUserId) return;
+//     const allowed = await canChat(socket.userId, otherUserId);
+//     if (!allowed) {
+//       socket.emit('error', { message: 'Chat not allowed' });
+//       return;
+//     }
+//     const room = roomFor(socket.userId, otherUserId);
+//     socket.join(room);
+//     socket.emit('joined', { roomId: room });
+//   });
 
-  socket.on('message', async ({ otherUserId, text }) => {
-    const t = (text || '').toString().trim();
-    if (!t || !otherUserId) return;
-    const allowed = await canChat(socket.userId, otherUserId);
-    if (!allowed) return;
-    const room = roomFor(socket.userId, otherUserId);
-    io.to(room).emit('message', { from: socket.userId, text: t, ts: Date.now() });
-  });
-});
+//   socket.on('message', async ({ otherUserId, text }) => {
+//     const t = (text || '').toString().trim();
+//     if (!t || !otherUserId) return;
+//     const allowed = await canChat(socket.userId, otherUserId);
+//     if (!allowed) return;
+//     const room = roomFor(socket.userId, otherUserId);
+//     io.to(room).emit('message', { from: socket.userId, text: t, ts: Date.now() });
+//   });
+// });
 
 server.listen(PORT, () => {
   console.log(`🚀 Server (HTTP+WS) running on port ${PORT}`);
