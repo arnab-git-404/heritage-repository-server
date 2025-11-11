@@ -52,6 +52,11 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toLocaleString() });
 });
 
+app.get("/", (req, res) => {
+  res.send("Heritage Repository Backend Server is running.");
+});
+
+
 // ===== Serve Uploaded Files =====
 // app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
