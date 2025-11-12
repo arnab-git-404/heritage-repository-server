@@ -1285,7 +1285,7 @@ router.post('/', requireAuth, upload.fields([
       return res.status(400).json({ errors: [{ msg: 'Missing required category fields' }] });
     }
 
-    if (!description || !keywords || !language) {
+    if (!description || !keywords) {
       return res.status(400).json({ errors: [{ msg: 'Missing required description fields' }] });
     }
 
@@ -1402,7 +1402,7 @@ router.post('/', requireAuth, upload.fields([
       title,
       description,
       keywords: typeof keywords === 'string' ? keywords.split(',').map(k => k.trim()) : keywords,
-      language,
+      language: language || 'Unknown',
       dateOfRecording: dateOfRecording || null,
       culturalSignificance,
       contentFileType,

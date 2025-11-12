@@ -124,7 +124,6 @@ const submissionSchema = new mongoose.Schema({
   },
   language: {
     type: String,
-    required: true
   },
   dateOfRecording: Date,
   culturalSignificance: String,
