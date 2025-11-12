@@ -1232,11 +1232,11 @@ async function uploadToCloudinary(buffer, folder = 'submissions', originalFilena
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: folder,
-        resource_type: isPdf ? 'raw' : 'auto', // Use 'raw' for PDFs
+        resource_type: 'auto',
         type: 'upload',
         access_mode: 'public',
         unique_filename: true,
-        format: isPdf ? 'pdf' : undefined
+        transformation: [{ fetch_format: "auto" }] 
       },
       (error, result) => {
         if (error) {
