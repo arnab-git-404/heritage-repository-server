@@ -1162,6 +1162,7 @@ import jwt from 'jsonwebtoken';
 import Submission from '../models/Submission.js';
 import streamifier from 'streamifier';
 import dotenv from 'dotenv';
+import { dbConnect } from '../utils/db.js';
 
 const router = express.Router();
 
@@ -1429,6 +1430,8 @@ router.post('/', requireAuth, upload.fields([
       status: 'pending'
     });
 
+    await dbConnect();
+
     await submission.save();
     console.log('✅ Submission saved:', submission._id);
 
@@ -1455,6 +1458,9 @@ router.post('/', requireAuth, upload.fields([
 // GET /api/submissions/my - Get user's own submissions
 router.get('/my', requireAuth, async (req, res) => {
   try {
+
+    await dbConnect();
+
     const submissions = await Submission.find({ userId: req.userId })
       .sort({ createdAt: -1 })
       .select('-__v');
@@ -1469,6 +1475,9 @@ router.get('/my', requireAuth, async (req, res) => {
 // GET /api/submissions/:id - Get single submission
 router.get('/:id', requireAuth, async (req, res) => {
   try {
+
+    await dbConnect();
+
     const submission = await Submission.findOne({
       _id: req.params.id,
       userId: req.userId

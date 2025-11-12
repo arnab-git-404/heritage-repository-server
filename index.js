@@ -15,24 +15,23 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import jwt from "jsonwebtoken";
 import Collaboration from "./models/Collaboration.js";
+import { dbConnect } from "./utils/db.js";
 
 // const __filename = fileURLToPath(import.meta.url);
 // const __dirname = path.dirname(__filename);
 // dotenv.config({ path: path.join(__dirname, ".env"), override: true });
 
-dotenv.config()
+dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 5000;
 
 // ===== CORS Configuration =====
 const corsOptions = {
-  origin: [
-    'http://localhost:8080',
-    `${process.env.FRONTEND_URL}`,
-  ],
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  origin: ["http://localhost:8080", `${process.env.FRONTEND_URL}`],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
 };
 
 // ===== Middleware =====
@@ -56,7 +55,6 @@ app.get("/", (req, res) => {
   res.send("Heritage Repository Backend Server is running.");
 });
 
-
 // ===== Serve Uploaded Files =====
 // app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -65,29 +63,29 @@ app.get("/", (req, res) => {
 // Remove any 'dist' serving to prevent Render build errors
 
 // ===== Connect to MongoDB =====
-const mongoUri = process.env.MONGODB_URI;
+// const mongoUri = process.env.MONGODB_URI;
 
-if (!mongoUri) {
-  console.error(
-    "❌ MONGODB_URI is not set. Make sure backend/.env contains MONGODB_URI."
-  );
-  process.exit(1);
-}
+// if (!mongoUri) {
+//   console.error(
+//     "❌ MONGODB_URI is not set. Make sure backend/.env contains MONGODB_URI."
+//   );
+//   process.exit(1);
+// }
 
-// Mask password in logs
-try {
-  const masked = mongoUri.replace(/:\/\/([^:]+):([^@]+)@/, "://$1:****@");
-  console.log("Attempting MongoDB connection with URI:", masked);
-} catch (_) {}
+// // Mask password in logs
+// try {
+//   const masked = mongoUri.replace(/:\/\/([^:]+):([^@]+)@/, "://$1:****@");
+//   console.log("Attempting MongoDB connection with URI:", masked);
+// } catch (_) {}
 
-mongoose
-  .connect(mongoUri, { serverSelectionTimeoutMS: 5000 })
-  .then(() => console.log("✅ Connected to MongoDB"))
-  .catch((err) => console.error("MongoDB connection error:", err));
+// mongoose
+//   .connect(mongoUri, { serverSelectionTimeoutMS: 5000 })
+//   .then(() => console.log("✅ Connected to MongoDB"))
+//   .catch((err) => console.error("MongoDB connection error:", err));
 
 // ===== Start Server (HTTP + Socket.IO) =====
-const PORT = process.env.PORT || 5000;
-const server = createServer(app);
+
+// await dbConnect();
 
 // const io = new SocketIOServer(server, {
 //   cors: { origin: "*" },
@@ -150,6 +148,71 @@ const server = createServer(app);
 //   });
 // });
 
-server.listen(PORT, () => {
-  console.log(`🚀 Server (HTTP+WS) running on port ${PORT}`);
-});
+// server.listen(PORT, () => {
+//   console.log(`🚀 Server (HTTP+WS) running on port ${PORT}`);
+// });
+
+// Graceful shutdown handler
+const gracefulShutdown = (server) => {
+  return (signal) => {
+    console.log(`\n${signal} received. Starting graceful shutdown...`);
+
+    server.close(() => {
+      console.log("Server closed");
+      process.exit(0);
+    });
+
+    // Force shutdown after 10 seconds
+    setTimeout(() => {
+      console.error("Forced shutdown after timeout");
+      process.exit(1);
+    }, 10000);
+  };
+};
+
+const startServer = async () => {
+  try {
+    await dbConnect();
+
+    const server = createServer(app);
+
+    server.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🗄️  MongoDB: Connected successfully`);
+      console.log(`📦 Image storage ready`);
+      // console.log(`📝 Environment: ${NODE_ENV || "development"}`);
+      // console.log(`⚡ Redis: Cache layer active`);
+      // console.log(`🔗 Socket.IO enabled`);
+    });
+    // Handle server errors
+    server.on("error", (error) => {
+      if (error.code === "EADDRINUSE") {
+        console.error(`Port ${PORT} is already in use`);
+      } else {
+        console.error("Server error:", error);
+      }
+      process.exit(1);
+    });
+
+    // Graceful shutdown on signals
+    process.on("SIGTERM", gracefulShutdown(server));
+    process.on("SIGINT", gracefulShutdown(server));
+
+    // Handle uncaught exceptions
+    process.on("uncaughtException", (error) => {
+      console.error("Uncaught Exception:", error);
+      gracefulShutdown(server)("uncaughtException");
+    });
+
+    // Handle unhandled promise rejections
+    process.on("unhandledRejection", (reason, promise) => {
+      console.error("Unhandled Rejection at:", promise, "reason:", reason);
+      gracefulShutdown(server)("unhandledRejection");
+    });
+  } catch (err) {
+    console.error("Failed to start server:", err.message);
+    process.exit(1);
+  }
+};
+
+startServer();

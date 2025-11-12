@@ -232,10 +232,12 @@ import ApprovedContent from '../models/ApprovedContent.js';
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { v2 as cloudinary } from 'cloudinary';
+import { dbConnect } from '../utils/db.js';
 
 const router = express.Router();
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
+  
   const { email, password } = req.body || {};
   const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
   const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
@@ -249,9 +251,9 @@ router.post('/login', (req, res) => {
   if (!process.env.JWT_SECRET) {
     return res.status(500).json({ errors: [{ msg: 'Server misconfiguration: JWT secret not set' }] });
   }
-
+  
   const token = jwt.sign(  payload , process.env.JWT_SECRET, { expiresIn: '30d' });
-
+  
   res.json({ token });
 });
 
@@ -259,14 +261,14 @@ router.post('/login', (req, res) => {
 // TODO: Implement proper admin middleware
 // For now, simplified version
 function requireAdmin(req, res, next) {
-
+  
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   
   if (!token) {
     return res.status(401).json({ errors: [{ msg: 'Authentication required' }] });
   }
-
+  
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     if (!payload?.user?.id) {
@@ -285,6 +287,10 @@ function requireAdmin(req, res, next) {
 // GET /api/admin/submissions?status=pending - Get submissions by status
 router.get('/submissions', requireAdmin, async (req, res) => {
   try {
+  
+    
+    await dbConnect();
+
     const { status = 'pending' } = req.query;
     
     const submissions = await Submission.find({ status })
@@ -307,6 +313,9 @@ router.patch('/submissions/:id/status', requireAdmin, async (req, res) => {
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ errors: [{ msg: 'Invalid status' }] });
     }
+
+
+    await dbConnect();
 
     const submission = await Submission.findById(req.params.id);
     
@@ -376,6 +385,9 @@ router.patch('/submissions/:id/status', requireAdmin, async (req, res) => {
 // DELETE /api/admin/submissions/:id - Delete submission (admin only)
 router.delete('/submissions/:id', requireAdmin, async (req, res) => {
   try {
+
+    await dbConnect();
+
     const submission = await Submission.findById(req.params.id);
     
     if (!submission) {
@@ -414,6 +426,8 @@ router.delete('/submissions/:id', requireAdmin, async (req, res) => {
 // GET /api/admin/users - Get all users
 router.get('/users', requireAdmin, async (req, res) => {
   try {
+
+    await dbConnect();
     const users = await User.find()
       .select('-password -__v')
       .sort({ createdAt: -1 });

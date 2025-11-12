@@ -8,12 +8,13 @@ import { sendMail } from '../utils/mailer.js';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import streamifier from 'streamifier';
+import { dbConnect } from '../utils/db.js';
 
 
 // Configure multer for memory storage
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
 export const router = express.Router();
@@ -46,10 +47,6 @@ router.post(
   [
     body('name', 'Name is required').not().isEmpty(),
     body('email', 'Please include a valid email').isEmail(),
-    body('password')
-      .isString()
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[^A-Za-z0-9]).{8,}$/)
-      .withMessage('Password must be at least 8 characters and include uppercase, lowercase, and a special character')
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -60,6 +57,9 @@ router.post(
     const { name, email, password } = req.body;
 
     try {
+
+      await dbConnect();
+
       // Check if user exists
       let user = await User.findOne({ email });
       
@@ -128,6 +128,9 @@ router.post(
     const { email, password } = req.body;
 
     try {
+
+      await dbConnect();
+
       const user = await User.findOne({ email }).select('+password');
       if (!user) {
         return res.status(400).json({ errors: [{ msg: 'Invalid credentials' }] });
@@ -179,6 +182,9 @@ router.post(
     const { email } = req.body;
 
     try {
+
+      await dbConnect();
+
       const user = await User.findOne({ email });
       if (user) {
         const resetToken = crypto.randomBytes(32).toString('hex');
@@ -243,6 +249,9 @@ router.post(
     const hashed = crypto.createHash('sha256').update(token).digest('hex');
 
     try {
+
+      await dbConnect();
+
       const user = await User.findOne({
         resetPasswordToken: hashed,
         resetPasswordExpires: { $gt: new Date() }
@@ -276,6 +285,8 @@ router.post('/refresh-token', async (req, res) => {
     // Verify the existing token
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
     
+    await dbConnect();
+
     // Get the user
     const user = await User.findById(decoded.user.id);
     if (!user) {
@@ -297,6 +308,8 @@ router.post('/refresh-token', async (req, res) => {
 // Get current user's profile
 router.get('/me', requireAuth, async (req, res) => {
   try {
+
+    await dbConnect();
     const user = await User.findById(req.userId).select('-password -resetPasswordToken -resetPasswordExpires');
     if (!user) return res.status(404).json({ errors: [{ msg: 'User not found' }] });
     res.json({ user });
@@ -309,6 +322,9 @@ router.get('/me', requireAuth, async (req, res) => {
 // Delete current user's profile and their submissions
 router.delete('/me', requireAuth, async (req, res) => {
   try {
+
+    await dbConnect();
+
     const user = await User.findByIdAndDelete(req.userId);
     if (!user) return res.status(404).json({ errors: [{ msg: 'User not found' }] });
     await Submission.deleteMany({ userId: req.userId });
@@ -330,6 +346,8 @@ router.patch('/profile', requireAuth, [
   body('bio').optional().trim(),
 ], async (req, res) => {
   try {
+
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -346,7 +364,8 @@ router.patch('/profile', requireAuth, [
     if (village !== undefined) updateFields.village = village;
     if (bio !== undefined) updateFields.bio = bio;
     
-    
+    await dbConnect();
+
     const updatedUser = await User.findByIdAndUpdate(
       req.userId,
       { $set: updateFields },
@@ -405,6 +424,8 @@ router.post('/avatar', requireAuth, upload.single('avatar'), async (req, res) =>
       `avatars/${req.userId}`
     );
     
+    await dbConnect();
+
     const updatedUser = await User.findByIdAndUpdate(
       req.userId,
       { avatar: result.secure_url },

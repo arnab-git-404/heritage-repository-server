@@ -66,6 +66,7 @@
 
 import express from 'express';
 import ApprovedContent from '../models/ApprovedContent.js';
+import { dbConnect } from '../utils/db.js';
 
 const router = express.Router();
 
@@ -130,6 +131,8 @@ router.get('/', async (req, res) => {
     // Pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
+    await dbConnect();
+
     const [content, total] = await Promise.all([
       ApprovedContent.find(query)
         .populate('userId', 'name email')
@@ -152,6 +155,9 @@ router.get('/', async (req, res) => {
 // GET /api/approved/:id - Get single approved content
 router.get('/:id', async (req, res) => {
   try {
+
+    await dbConnect();
+
     const content = await ApprovedContent.findById(req.params.id)
       .populate('userId', 'name email');
 
@@ -169,6 +175,8 @@ router.get('/:id', async (req, res) => {
 // POST /api/approved/:id/view - Track view
 router.post('/:id/view', async (req, res) => {
   try {
+    await dbConnect();
+
     const content = await ApprovedContent.findByIdAndUpdate(
       req.params.id,
       { $inc: { views: 1 } },
@@ -189,6 +197,9 @@ router.post('/:id/view', async (req, res) => {
 // POST /api/approved/:id/download - Track download
 router.post('/:id/download', async (req, res) => {
   try {
+
+    await dbConnect();
+
     const content = await ApprovedContent.findByIdAndUpdate(
       req.params.id,
       { $inc: { downloads: 1 } },
