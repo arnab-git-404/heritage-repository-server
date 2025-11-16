@@ -732,9 +732,13 @@ router.delete("/submissions/:id", requireAdmin, async (req, res) => {
     // Delete from approved content if exists
     if (submission.status === "approved") {
       await ApprovedContent.findOneAndDelete({ submissionId: submission._id });
-    }
 
-    await Submission.findByIdAndDelete(submission._id);
+      // This two have not Tested yet
+      // Also delete any associated amendment requests
+      await AmendmentRequest.deleteMany({ submissionId: submission._id });
+      
+      await Submission.findByIdAndDelete(submission._id)
+    }
 
     res.json({ message: "Submission deleted successfully" });
   } catch (error) {
