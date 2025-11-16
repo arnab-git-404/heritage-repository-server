@@ -17,6 +17,19 @@ const approvedContentSchema = new mongoose.Schema({
     required: true
   },
 
+// VERSION TRACKING
+  currentVersion: {
+    type: Number,
+    default: 1
+  },
+  
+  totalAmendments: {
+    type: Number,
+    default: 0
+  },
+  
+  lastAmendmentDate: Date,
+
   // All fields from submission (copied on approval)
   country: { type: String, required: true },
   stateRegion: { type: String, required: true },
@@ -50,8 +63,10 @@ const approvedContentSchema = new mongoose.Schema({
   warningOtherText: String,
   
   translationFileUrl: String,
+  translationCloudinaryId: String,
   backgroundInfo: String,
   verificationDocUrl: String,
+  verificationCloudinaryId: String,
 
   // Approval metadata
   approvedBy: {

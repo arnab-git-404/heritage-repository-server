@@ -135,11 +135,42 @@ const submissionSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'rejected'],
     default: 'pending'
   },
+
+  isResubmission: {
+    type: Boolean,
+    default: false
+  },
+  resubmissionCount: {
+    type: Number,
+    default: 0
+  },
+  originalSubmissionDate: Date,
+  lastResubmissionDate: Date,
+
+    // ✅ NEW: User-provided change summary
+  changesSummary: {
+    type: String,
+    maxlength: 500
+  },
+
+  // Review details
   reviewedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
   reviewedAt: Date,
+  
+  statusChangeReason: String,
+  approvedAt: Date,
+
+
+  previousVersion: {
+    type: Object,
+    required: false
+  },
+  previousVersionDate: Date,
+  
+  
   rejectionReason: String,
 
   // Metadata

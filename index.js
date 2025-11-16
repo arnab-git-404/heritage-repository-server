@@ -16,7 +16,7 @@ import { Server as SocketIOServer } from "socket.io";
 import jwt from "jsonwebtoken";
 import Collaboration from "./models/Collaboration.js";
 import { dbConnect } from "./utils/db.js";
-
+import Amendment from "./routes/Amendment.js"
 
 dotenv.config();
 
@@ -43,7 +43,9 @@ app.use("/api/approved", approvedRoutes);
 app.use("/api/uploads", uploadsRoutes);
 app.use("/api/reference", referenceRoutes);
 app.use("/api/collab", collaborationRoutes);
+app.use("/api/amendments", Amendment);
 
+// ===== Health Check Endpoint =====
 app.get("/api/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toLocaleString() });
 });

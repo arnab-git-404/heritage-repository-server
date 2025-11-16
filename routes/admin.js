@@ -377,6 +377,7 @@ import User from "../models/User.js";
 import jwt from "jsonwebtoken";
 import { v2 as cloudinary } from "cloudinary";
 import { sendMail } from "../utils/mailer.js";
+import AmendmentRequest from '../models/AmendmentRequest.js';
 
 const router = express.Router();
 
@@ -446,12 +447,14 @@ router.get("/stats", requireAdmin, async (req, res) => {
       pendingSubmissions,
       approvedSubmissions,
       rejectedSubmissions,
+      amendmentRequests,
       totalViews,
       totalDownloads,
       recentUsers,
       recentSubmissions,
     ] = await Promise.all([
       User.countDocuments(),
+      AmendmentRequest.countDocuments(),
       Submission.countDocuments({ status: "pending" }),
       Submission.countDocuments({ status: "approved" }),
       Submission.countDocuments({ status: "rejected" }),
@@ -473,6 +476,7 @@ router.get("/stats", requireAdmin, async (req, res) => {
         totalUsers,
         pendingSubmissions,
         approvedSubmissions,
+        amendmentRequests,
         rejectedSubmissions,
         totalViews: totalViews[0]?.total || 0,
         totalDownloads: totalDownloads[0]?.total || 0,
@@ -879,5 +883,290 @@ router.delete("/users/:id", requireAdmin, async (req, res) => {
     res.status(500).json({ errors: [{ msg: "Failed to delete user" }] });
   }
 });
+
+
+
+
+// ===== GET /api/admin/amendments - Get all amendment requests =====
+router.get("/amendments", requireAdmin, async (req, res) => {
+  try {
+    const { status = 'pending', page = 1, limit = 20 } = req.query;
+
+    const query = { status };
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [amendments, total] = await Promise.all([
+      AmendmentRequest.find(query)
+        .populate('userId', 'name email avatar country tribe')
+        .populate('submissionId', 'title status')
+        .populate('approvedContentId', 'title currentVersion')
+        .populate('reviewedBy', 'name email')
+        .sort({ requestedAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
+      AmendmentRequest.countDocuments(query)
+    ]);
+
+    res.json({
+      amendments,
+      pagination: {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / parseInt(limit)),
+        limit: parseInt(limit)
+      }
+    });
+  } catch (error) {
+    console.error('Fetch amendments error:', error);
+    res.status(500).json({ errors: [{ msg: 'Failed to fetch amendments' }] });
+  }
+});
+
+// ===== GET /api/admin/amendments/:id - Get amendment details with comparison =====
+router.get("/amendments/:id", requireAdmin, async (req, res) => {
+  try {
+    const amendment = await AmendmentRequest.findById(req.params.id)
+      .populate('userId', 'name email avatar role country tribe village')
+      .populate('submissionId')
+      .populate('approvedContentId')
+      .populate('reviewedBy', 'name email');
+
+    if (!amendment) {
+      return res.status(404).json({ errors: [{ msg: 'Amendment not found' }] });
+    }
+
+    // Prepare side-by-side comparison
+    const comparison = {
+      current: {
+        version: `v${amendment.previousVersionNumber}`,
+        label: 'Current Approved Version',
+        data: amendment.currentApprovedSnapshot
+      },
+      proposed: {
+        version: `v${amendment.versionNumber}`,
+        label: 'Proposed Changes',
+        data: amendment.proposedChanges
+      },
+      changes: amendment.changedFields.map(change => ({
+        field: change.fieldName,
+        type: change.changeType,
+        before: change.oldValue,
+        after: change.newValue
+      })),
+      summary: amendment.changesSummary
+    };
+
+    res.json({ 
+      amendment, 
+      comparison 
+    });
+  } catch (error) {
+    console.error('Fetch amendment error:', error);
+    res.status(500).json({ errors: [{ msg: 'Failed to fetch amendment' }] });
+  }
+});
+
+// ===== PATCH /api/admin/amendments/:id/review - Approve or reject amendment =====
+router.patch("/amendments/:id/review", requireAdmin, async (req, res) => {
+  try {
+    const { approved, reviewNotes } = req.body;
+
+    const amendment = await AmendmentRequest.findById(req.params.id)
+      .populate('userId', 'name email')
+      .populate('submissionId')
+      .populate('approvedContentId');
+
+    if (!amendment) {
+      return res.status(404).json({ errors: [{ msg: 'Amendment not found' }] });
+    }
+
+    if (amendment.status !== 'pending') {
+      return res.status(400).json({ 
+        errors: [{ msg: 'Amendment already processed' }] 
+      });
+    }
+
+    const userEmail = amendment.userId?.email;
+    const userName = amendment.userId?.name || 'User';
+    const submission = amendment.submissionId;
+
+    if (approved) {
+      // ✅ APPROVE AMENDMENT
+      console.log(`✅ Approving amendment - v${amendment.previousVersionNumber} → v${amendment.versionNumber}`);
+
+      // Case 1: Amending APPROVED content
+      if (amendment.approvedContentId) {
+        const approvedContent = await ApprovedContent.findById(amendment.approvedContentId);
+
+        if (!approvedContent) {
+          return res.status(404).json({ 
+            errors: [{ msg: 'Approved content not found' }] 
+          });
+        }
+
+        // Delete old files if replaced
+        const filesToDelete = [];
+        if (amendment.proposedChanges.contentCloudinaryId !== amendment.currentApprovedSnapshot.contentCloudinaryId) {
+          filesToDelete.push(amendment.currentApprovedSnapshot.contentCloudinaryId);
+        }
+        if (amendment.proposedChanges.translationCloudinaryId !== amendment.currentApprovedSnapshot.translationCloudinaryId) {
+          filesToDelete.push(amendment.currentApprovedSnapshot.translationCloudinaryId);
+        }
+        if (amendment.proposedChanges.verificationCloudinaryId !== amendment.currentApprovedSnapshot.verificationCloudinaryId) {
+          filesToDelete.push(amendment.currentApprovedSnapshot.verificationCloudinaryId);
+        }
+
+        // Delete old files from Cloudinary
+        for (const fileId of filesToDelete) {
+          if (fileId) {
+            await cloudinary.uploader.destroy(fileId).catch(err => {
+              console.log('⚠️  Failed to delete old file:', fileId);
+            });
+          }
+        }
+
+        // Apply all proposed changes to approved content
+        Object.assign(approvedContent, amendment.proposedChanges);
+        
+        // Update version tracking
+        approvedContent.currentVersion = amendment.versionNumber;
+        approvedContent.totalAmendments = (approvedContent.totalAmendments || 0) + 1;
+        approvedContent.lastAmendmentDate = new Date();
+        approvedContent.updatedAt = new Date();
+
+        await approvedContent.save();
+
+        console.log(`✅ Approved content updated to v${amendment.versionNumber}`);
+      }
+      // Case 2: Approving PENDING submission (first approval)
+      else {
+        // Create new approved content
+        const approvedContent = new ApprovedContent({
+          submissionId: submission._id,
+          userId: amendment.userId._id,
+          ...amendment.proposedChanges,
+          currentVersion: 1,
+          totalAmendments: 0,
+          approvedBy: req.adminId,
+          approvedAt: new Date()
+        });
+
+        await approvedContent.save();
+
+        // Update submission
+        submission.status = 'approved';
+        submission.approvedAt = new Date();
+        submission.reviewedBy = req.adminId;
+        submission.reviewedAt = new Date();
+
+        await submission.save();
+
+        console.log('✅ First approval - Approved content created');
+      }
+
+      // Update amendment status
+      amendment.status = 'approved';
+      amendment.reviewedBy = req.adminId;
+      amendment.reviewedAt = new Date();
+      amendment.approvedAt = new Date();
+      amendment.reviewNotes = reviewNotes;
+
+      await amendment.save();
+
+      // Send approval email
+      if (userEmail) {
+        await sendMail({
+          to: userEmail,
+          subject: `Amendment Approved - v${amendment.versionNumber}`,
+          html: `
+            <h2>Amendment Approved! 🎉</h2>
+            <p>Dear ${userName},</p>
+            <p>Your amendment request has been approved and is now live as <strong>Version ${amendment.versionNumber}</strong>.</p>
+            <p><strong>Changes:</strong> ${amendment.changesSummary}</p>
+            ${reviewNotes ? `<p><strong>Admin notes:</strong> ${reviewNotes}</p>` : ''}
+            <p>Your content is now updated with the new changes.</p>
+            <br>
+            <p>Best regards,<br>Heritage Repository Team</p>
+          `,
+          text: `Amendment approved - v${amendment.versionNumber}\n\nChanges: ${amendment.changesSummary}`
+        });
+      }
+
+      return res.json({ 
+        message: `Amendment approved - Now v${amendment.versionNumber}`,
+        amendment,
+        newVersion: amendment.versionNumber
+      });
+
+    } else {
+      // ❌ REJECT AMENDMENT
+      console.log(`❌ Rejecting amendment - Staying at v${amendment.previousVersionNumber}`);
+
+      // Delete newly uploaded files from Cloudinary
+      const filesToDelete = [];
+      if (amendment.proposedChanges.contentCloudinaryId !== amendment.currentApprovedSnapshot.contentCloudinaryId) {
+        filesToDelete.push(amendment.proposedChanges.contentCloudinaryId);
+      }
+      if (amendment.proposedChanges.translationCloudinaryId !== amendment.currentApprovedSnapshot.translationCloudinaryId) {
+        filesToDelete.push(amendment.proposedChanges.translationCloudinaryId);
+      }
+      if (amendment.proposedChanges.verificationCloudinaryId !== amendment.currentApprovedSnapshot.verificationCloudinaryId) {
+        filesToDelete.push(amendment.proposedChanges.verificationCloudinaryId);
+      }
+
+      for (const fileId of filesToDelete) {
+        if (fileId) {
+          await cloudinary.uploader.destroy(fileId).catch(() => {});
+        }
+      }
+
+      // Update amendment status
+      amendment.status = 'rejected';
+      amendment.reviewedBy = req.adminId;
+      amendment.reviewedAt = new Date();
+      amendment.rejectedAt = new Date();
+      amendment.reviewNotes = reviewNotes;
+      amendment.rejectionReason = reviewNotes;
+
+      await amendment.save();
+
+      // Send rejection email
+      if (userEmail) {
+        await sendMail({
+          to: userEmail,
+          subject: 'Amendment Rejected',
+          html: `
+            <h2>Amendment Rejected</h2>
+            <p>Dear ${userName},</p>
+            <p>Unfortunately, your amendment request for <strong>Version ${amendment.versionNumber}</strong> was not approved.</p>
+            <p><strong>Your proposed changes:</strong> ${amendment.changesSummary}</p>
+            ${reviewNotes ? `<p><strong>Reason:</strong> ${reviewNotes}</p>` : ''}
+            <p>Your content remains at <strong>Version ${amendment.previousVersionNumber}</strong>.</p>
+            <p>You can submit a new amendment request with the necessary corrections.</p>
+            <br>
+            <p>Best regards,<br>Heritage Repository Team</p>
+          `,
+          text: `Amendment rejected - Staying at v${amendment.previousVersionNumber}\n\nReason: ${reviewNotes}`
+        });
+      }
+
+      return res.json({ 
+        message: 'Amendment rejected - Original version preserved',
+        amendment,
+        currentVersion: amendment.previousVersionNumber
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Review amendment error:', error);
+    res.status(500).json({ 
+      errors: [{ 
+        msg: 'Failed to review amendment', 
+        detail: error.message 
+      }] 
+    });
+  }
+});
+
 
 export default router;
