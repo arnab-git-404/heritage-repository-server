@@ -3,7 +3,7 @@ import { body, validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Submission from '../models/Submission.js';
-import crypto from 'crypto';
+import m from 'crypto';
 import { sendMail } from '../utils/mailer.js';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -382,6 +382,11 @@ router.patch('/profile', requireAuth, [
     res.status(500).json({ errors: [{ msg: 'Server error' }] });
   }
 });
+
+
+
+
+
 
 
 async function uploadAvatarToCloudinary(buffer, folder = 'avatars') {
