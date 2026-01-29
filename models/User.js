@@ -24,7 +24,10 @@ const userSchema = new mongoose.Schema({
     minlength: [6, 'Password must be at least 6 characters long'],
     select: false
   },
-  // ✅ NEW: Profile fields
+  refreshToken: {
+    type: String,
+    select: false
+  },
   role: {
     type: String,
     enum: ['Custodian', 'Researcher', 'Contributor', 'Viewer'],
@@ -59,7 +62,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  // ✅ Password reset fields
+  // Password reset fields
   resetPasswordToken: {
     type: String,
     select: false
